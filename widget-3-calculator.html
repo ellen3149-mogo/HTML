@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>預售屋價格計算器</title>
+<style>
+:root{--primary:#1a3a5c;--accent:#e8732a;--accent2:#2a9d8f;--border:#dde3ee;--bg:#f4f7fb;--shadow:0 2px 12px rgba(26,58,92,0.08)}
+*{box-sizing:border-box}
+body{background:var(--bg);font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif;color:#222;margin:0;padding:12px}
+.card{background:#fff;border-radius:12px;box-shadow:var(--shadow);border:1px solid var(--border);padding:18px;margin-bottom:14px}
+.section-title{font-size:1.05rem;font-weight:700;color:var(--primary);border-left:4px solid var(--accent);padding-left:10px;margin-bottom:14px}
+label{font-size:.83rem;font-weight:600;color:var(--primary);margin-bottom:4px;display:block}
+.form-ctrl{width:100%;border:1px solid var(--border);border-radius:8px;padding:.38rem .65rem;font-size:.9rem;outline:none;transition:.15s;font-family:inherit}
+.form-ctrl:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(232,115,42,.15)}
+select.form-ctrl{cursor:pointer}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:620px){.grid2{grid-template-columns:1fr}}
+.result-box{background:var(--primary);color:#fff;border-radius:10px;padding:14px 16px;margin-top:14px}
+.result-box .rl{font-size:.78rem;opacity:.75;margin-bottom:2px}
+.result-box .rv{font-size:1.3rem;font-weight:700}
+.result-box .rv.accent{color:#ffd166}
+.result-row{display:flex;gap:16px;flex-wrap:wrap}
+.result-col{flex:1;min-width:100px}
+.monthly-note{font-size:.78rem;opacity:.7;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.2)}
+.ref-table{width:100%;border-collapse:collapse;font-size:.82rem}
+.ref-table th{background:var(--primary);color:#fff;padding:7px 10px;text-align:left;font-weight:600}
+.ref-table td{padding:6px 10px;border-bottom:1px solid #eef1f8;vertical-align:middle}
+.ref-table tr:hover td{background:#f0f5ff}
+.dist-badge{background:#e8f0fe;color:var(--primary);border-radius:5px;padding:2px 8px;font-size:.78rem;font-weight:600}
+.top-dist{color:var(--accent);font-weight:700}
+.hint{font-size:.78rem;color:#6c7a94;margin-top:4px}
+.range-wrap{display:flex;align-items:center;gap:8px}
+.range-wrap input[type=range]{flex:1;accent-color:var(--accent)}
+.range-val{font-weight:700;color:var(--primary);min-width:36px;font-size:.9rem}
+.tab-bar{display:flex;gap:6px;margin-bottom:14px}
+.tab-btn{flex:1;padding:8px;border:2px solid var(--border);border-radius:8px;background:#fff;color:var(--primary);font-weight:600;cursor:pointer;font-size:.88rem;transition:.15s;text-align:center}
+.tab-btn.active{border-color:var(--accent);background:var(--accent);color:#fff}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+.loading-overlay{position:fixed;inset:0;background:rgba(255,255,255,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;gap:12px}
+.spinner{width:36px;height:36px;border:4px solid #dde3ee;border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{color:var(--primary);font-weight:600}
+.ref-table-wrap{max-height:340px;overflow-y:auto;border-radius:8px;border:1px solid var(--border)}
+.tag{display:inline-block;background:#e3f0ff;color:#1a5da0;border-radius:5px;padding:1px 7px;font-size:.75rem;font-weight:600;margin-left:4px}
+.tag.hot{background:#fff0e6;color:#c95e00}
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text">載入均價資料中…</div>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('a',this)">📐 由單價算總價</button>
+  <button class="tab-btn" onclick="switchTab('b',this)">💰 由總價反推單價</button>
+  <button class="tab-btn" onclick="switchTab('c',this)">📊 均價參考表</button>
+</div>
+
+<!-- Tab A: unit price → total -->
+<div class="tab-panel active" id="tab-a">
+  <div class="card">
+    <div class="section-title">由單價推算總價與貸款</div>
+    <div class="grid2">
+      <div>
+        <label>行政區參考 <span class="tag">自動帶入均價</span></label>
+        <select class="form-ctrl" id="a-dist" onchange="aDistChange()"><option value="">-- 選擇行政區（選填）--</option></select>
+        <div class="hint" id="a-dist-hint"></div>
+      </div>
+      <div>
+        <label>建物坪數（坪）</label>
+        <input class="form-ctrl" type="number" id="a-area" placeholder="例：30" min="1" oninput="calcA()">
+      </div>
+      <div>
+        <label>單價（元/坪）</label>
+        <input class="form-ctrl" type="number" id="a-up" placeholder="例：200000" oninput="calcA()">
+      </div>
+      <div>
+        <label>車位價格（萬元，無則填 0）</label>
+        <input class="form-ctrl" type="number" id="a-pk" value="0" min="0" oninput="calcA()">
+      </div>
+      <div>
+        <label>頭期款比例</label>
+        <div class="range-wrap">
+          <input type="range" id="a-down" min="10" max="50" value="20" oninput="document.getElementById('a-down-v').textContent=this.value+'%';calcA()">
+          <span class="range-val" id="a-down-v">20%</span>
+        </div>
+      </div>
+      <div>
+        <label>貸款年期</label>
+        <select class="form-ctrl" id="a-years" onchange="calcA()">
+          <option value="20">20 年</option>
+          <option value="30" selected>30 年</option>
+          <option value="40">40 年</option>
+        </select>
+      </div>
+    </div>
+    <div class="result-box" id="a-result">
+      <div class="result-row">
+        <div class="result-col"><div class="rl">房屋本體</div><div class="rv" id="a-r-house">--</div></div>
+        <div class="result-col"><div class="rl">含車位總價</div><div class="rv accent" id="a-r-total">--</div></div>
+      </div>
+      <div class="result-row" style="margin-top:10px">
+        <div class="result-col"><div class="rl">頭期款</div><div class="rv" id="a-r-down">--</div></div>
+        <div class="result-col"><div class="rl">貸款金額</div><div class="rv" id="a-r-loan">--</div></div>
+      </div>
+      <div class="monthly-note">每月房貸（2.5% 利率）：<b id="a-r-monthly">--</b></div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab B: total → unit price -->
+<div class="tab-panel" id="tab-b">
+  <div class="card">
+    <div class="section-title">由總價反推單價與還款計畫</div>
+    <div class="grid2">
+      <div>
+        <label>成交總價（萬元）</label>
+        <input class="form-ctrl" type="number" id="b-tp" placeholder="例：1500" oninput="calcB()">
+      </div>
+      <div>
+        <label>建物坪數（坪）</label>
+        <input class="form-ctrl" type="number" id="b-area" placeholder="例：35" min="1" oninput="calcB()">
+      </div>
+      <div>
+        <label>車位價格（萬元，無則填 0）</label>
+        <input class="form-ctrl" type="number" id="b-pk" value="0" min="0" oninput="calcB()">
+      </div>
+      <div>
+        <label>年收入（萬元，用於負擔率試算）</label>
+        <input class="form-ctrl" type="number" id="b-income" placeholder="例：120" oninput="calcB()">
+      </div>
+      <div>
+        <label>頭期款比例</label>
+        <div class="range-wrap">
+          <input type="range" id="b-down" min="10" max="50" value="20" oninput="document.getElementById('b-down-v').textContent=this.value+'%';calcB()">
+          <span class="range-val" id="b-down-v">20%</span>
+        </div>
+      </div>
+      <div>
+        <label>貸款年期</label>
+        <select class="form-ctrl" id="b-years" onchange="calcB()">
+          <option value="20">20 年</option>
+          <option value="30" selected>30 年</option>
+          <option value="40">40 年</option>
+        </select>
+      </div>
+    </div>
+    <div class="result-box">
+      <div class="result-row">
+        <div class="result-col"><div class="rl">推算單價</div><div class="rv accent" id="b-r-up">--</div></div>
+        <div class="result-col"><div class="rl">頭期款</div><div class="rv" id="b-r-down">--</div></div>
+      </div>
+      <div class="result-row" style="margin-top:10px">
+        <div class="result-col"><div class="rl">貸款金額</div><div class="rv" id="b-r-loan">--</div></div>
+        <div class="result-col"><div class="rl">每月房貸（2.5%）</div><div class="rv accent" id="b-r-monthly">--</div></div>
+      </div>
+      <div class="monthly-note" id="b-burden-note">輸入年收入可試算房貸負擔率</div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab C: reference table -->
+<div class="tab-panel" id="tab-c">
+  <div class="card">
+    <div class="section-title">各行政區均價參考表</div>
+    <div class="ref-table-wrap">
+      <table class="ref-table">
+        <thead>
+          <tr><th>行政區</th><th>筆數</th><th>平均單價(元/坪)</th><th>最低單價</th><th>最高單價</th><th>平均總價(萬)</th></tr>
+        </thead>
+        <tbody id="ref-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+// !! REPLACE THIS URL WITH YOUR GITHUB RAW URL !!
+const DATA_URL = './data.json';
+
+const C={district:0,unit_price:16,total_price:15,build_area:10,room:11,parking_price:19};
+let distStats={};
+
+async function loadData(){
+  try{
+    const r=await fetch(DATA_URL);
+    const data=await r.json();
+    // compute district stats only
+    data.forEach(row=>{
+      const d=row[C.district];if(!d)return;
+      if(!distStats[d])distStats[d]={n:0,up_sum:0,up_n:0,tp_sum:0,up_min:Infinity,up_max:0};
+      const s=distStats[d];s.n++;
+      if(row[C.unit_price]>0){s.up_sum+=row[C.unit_price];s.up_n++;s.up_min=Math.min(s.up_min,row[C.unit_price]);s.up_max=Math.max(s.up_max,row[C.unit_price]);}
+      if(row[C.total_price]>0)s.tp_sum+=row[C.total_price];
+    });
+    Object.values(distStats).forEach(s=>{s.avg_up=s.up_n?Math.round(s.up_sum/s.up_n):0;s.avg_tp=s.n?Math.round(s.tp_sum/s.n/10000):0;if(s.up_min===Infinity)s.up_min=0;});
+    document.getElementById('loading').style.display='none';
+    populateDistSelect();
+    renderRefTable();
+  }catch(e){
+    document.getElementById('loading').innerHTML='<div style="color:red;padding:20px">⚠️ 資料載入失敗，請確認 GitHub URL 設定正確</div>';
+  }
+}
+
+function populateDistSelect(){
+  const sel=document.getElementById('a-dist');
+  Object.keys(distStats).sort().forEach(d=>{const o=document.createElement('option');o.value=o.textContent=d;sel.appendChild(o);});
+}
+
+function renderRefTable(){
+  const rows=Object.entries(distStats).sort((a,b)=>b[1].avg_up-a[1].avg_up);
+  const maxAvg=rows[0][1].avg_up;
+  document.getElementById('ref-tbody').innerHTML=rows.map(([d,s])=>`<tr>
+    <td><span class="dist-badge">${d}</span>${s.avg_up===maxAvg?'<span class="tag hot">最高</span>':''}</td>
+    <td>${s.n.toLocaleString()}</td>
+    <td class="top-dist">${s.avg_up.toLocaleString()}</td>
+    <td>${s.up_min.toLocaleString()}</td>
+    <td>${s.up_max.toLocaleString()}</td>
+    <td>${s.avg_tp.toLocaleString()}</td>
+  </tr>`).join('');
+}
+
+function aDistChange(){
+  const d=document.getElementById('a-dist').value;
+  const hint=document.getElementById('a-dist-hint');
+  if(d&&distStats[d]){
+    const s=distStats[d];
+    hint.textContent=`${d} 均價：${s.avg_up.toLocaleString()} 元/坪（最低 ${s.up_min.toLocaleString()}，最高 ${s.up_max.toLocaleString()}）`;
+    document.getElementById('a-up').value=s.avg_up;
+  }else hint.textContent='';
+  calcA();
+}
+
+function monthly(loanWan,rate=0.025,years=30){
+  const loan=loanWan*10000,r=rate/12,n=years*12;
+  return Math.round(loan*r*Math.pow(1+r,n)/(Math.pow(1+r,n)-1));
+}
+
+function calcA(){
+  const area=parseFloat(document.getElementById('a-area').value)||0;
+  const up=parseFloat(document.getElementById('a-up').value)||0;
+  const pk=parseFloat(document.getElementById('a-pk').value)||0;
+  const downPct=parseInt(document.getElementById('a-down').value)||20;
+  const years=parseInt(document.getElementById('a-years').value)||30;
+  if(!area||!up)return;
+  const houseWan=area*up/10000;
+  const totalWan=houseWan+pk;
+  const downWan=totalWan*downPct/100;
+  const loanWan=totalWan-downWan;
+  const mo=monthly(loanWan,0.025,years);
+  document.getElementById('a-r-house').textContent=houseWan.toFixed(1)+' 萬';
+  document.getElementById('a-r-total').textContent=totalWan.toFixed(1)+' 萬';
+  document.getElementById('a-r-down').textContent=downWan.toFixed(1)+' 萬';
+  document.getElementById('a-r-loan').textContent=loanWan.toFixed(1)+' 萬';
+  document.getElementById('a-r-monthly').textContent='約 '+mo.toLocaleString()+' 元';
+}
+
+function calcB(){
+  const tp=parseFloat(document.getElementById('b-tp').value)||0;
+  const area=parseFloat(document.getElementById('b-area').value)||0;
+  const pk=parseFloat(document.getElementById('b-pk').value)||0;
+  const income=parseFloat(document.getElementById('b-income').value)||0;
+  const downPct=parseInt(document.getElementById('b-down').value)||20;
+  const years=parseInt(document.getElementById('b-years').value)||30;
+  if(!tp||!area)return;
+  const houseWan=tp-pk;
+  const up=Math.round(houseWan*10000/area);
+  const downWan=tp*downPct/100;
+  const loanWan=tp-downWan;
+  const mo=monthly(loanWan,0.025,years);
+  document.getElementById('b-r-up').textContent=up.toLocaleString()+' 元/坪';
+  document.getElementById('b-r-down').textContent=downWan.toFixed(1)+' 萬';
+  document.getElementById('b-r-loan').textContent=loanWan.toFixed(1)+' 萬';
+  document.getElementById('b-r-monthly').textContent='約 '+mo.toLocaleString()+' 元';
+  if(income>0){
+    const moIncome=income*10000/12;
+    const burdenPct=Math.round(mo/moIncome*100);
+    const level=burdenPct<=30?'✅ 健康（≤30%）':burdenPct<=40?'⚠️ 偏高（30~40%）':'🔴 過高（>40%）';
+    document.getElementById('b-burden-note').textContent=`房貸負擔率：${burdenPct}%  ${level}`;
+  }else{
+    document.getElementById('b-burden-note').textContent='輸入年收入可試算房貸負擔率';
+  }
+}
+
+function switchTab(id,btn){
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  btn.classList.add('active');
+}
+
+loadData();
+</script>
+</body>
+</html>
